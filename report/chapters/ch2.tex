@@ -1,0 +1,123 @@
+\section{相关工作}
+
+\subsection{深度伪造生成技术}
+
+按照 DF40 基准的分类\cite{yan2024df40}，深度伪造可分为四类。
+
+\textbf{换脸（Face-Swapping, FS）}：把源人脸的身份迁移到目标视频。早期 DeepFakes 类方法依赖“编码器-解码器 + 掩码融合”，会在人脸与背景交界处留下混合伪影；FaceShifter\cite{li2020faceshifter}、SimSwap、FaceDancer、BlendFace 等新方法通过身份-背景解耦直接生成整幅图像，\textbf{不再有显式的混合步骤}——这直接瓦解了“检测混合边界”这一类方法的假设。
+
+\textbf{表情重演（Face-Reenactment, FR）}：驱动目标人物做出源人物的表情或口型，代表方法有 Face2Face\cite{thies2016face2face}、NeuralTextures\cite{thies2019neural}、FOMM、SadTalker、Wav2Lip 等。重演类伪造通常不替换身份，只在局部改变纹理与几何，伪影更弱，是检测的难点。
+
+\textbf{全脸合成（Entire Face Synthesis, EFS）}：从噪声直接生成不存在的人脸，代表方法有 StyleGAN 系列、VQGAN、DDPM\cite{ho2020ddpm}、Stable Diffusion\cite{rombach2022ldm}、PixArt-$\alpha$、DiT 等。扩散模型生成的图像在频域上更接近真实分布，传统基于 GAN 指纹的检测器容易失效。
+
+\textbf{属性编辑（Face Editing, FE）}：修改年龄、性别、表情等属性，如 StarGAN、StyleCLIP、e4e 等。
+
+从检测角度看，生成技术的演进带来两个关键变化：\textbf{伪影从“结构性”转向“统计性”}（从明显的融合边界，变成难以人眼察觉的频域/噪声分布差异），\textbf{方法从“少数几种”变成“持续涌现”}（DF40 已收录 40 种方法，远超 FF++ 的 4 种）。
+
+\subsection{深度伪造检测方法}
+
+\subsubsection{空域方法}
+
+最直接的思路是把检测当作图像二分类。MesoNet\cite{afchar2018mesonet} 用浅层卷积捕捉局部纹理；FaceForensics++ 提出的 Xception 基线\cite{rossler2019ffpp} 成为此后多年的标准 backbone；Multi-attentional 方法\cite{zhao2021multi} 用多注意力头捕捉不同区域的伪影；身份一致性 Transformer\cite{dong2022ict} 则显式建模“源身份与目标身份”的一致性，在跨库场景表现较好。
+
+空域方法的优点是实现简单、推理快，缺点是容易学到与数据集相关的捷径（压缩方式、人脸对齐方式、身份分布），跨库时性能下降明显。
+
+\subsubsection{频域方法}
+
+伪造过程中的上采样、插值、生成器上采样层会在频域留下规律性痕迹，因此频域方法成为一条重要分支：
+
+\begin{itemize}
+  \item \textbf{F3-Net}\cite{qian2020f3net}：用 DCT 提取频域特征，并与 RGB 特征融合；
+  \item \textbf{SPSL}\cite{liu2021spsl}：发现相位谱包含更丰富的伪造线索，提出空间-相位双流；
+  \item \textbf{SRM}\cite{luo2021srm}：用 SRM 高通滤波器提取噪声残差，抑制图像内容、突出伪造噪声。
+\end{itemize}
+
+频域方法的共同假设是“伪造会留下稳定的频域指纹”。但这一假设在强压缩下是否成立，文献中讨论不足。本文的实验（第 5 章）发现，FF++ C23 上真假图的平均频谱差异主要集中在水平/垂直轴，呈压缩块效应形态，提示频域分支学到的可能更多是“压缩方式”而非“生成器指纹”。
+
+\subsubsection{重构与解耦方法}
+
+这类方法不直接分类，而是先“重建”再比较：RECCE\cite{cao2022recce} 用重构-分类联合学习，把远离真实特征聚类中心的样本判为伪造；DIRE\cite{wang2023dire} 用预训练扩散模型重建输入图像，以重建误差作为伪造线索；AEROBLADE\cite{ricker2024aeroblade} 利用潜扩散模型自编码器的重建误差，无需训练即可检测扩散生成图像。重构类方法的优势是\textbf{对未见生成器更鲁棒}，因为它们建模的是“真实图像流形”，而不是某类伪造的判别边界；缺点是对非扩散生成的伪造（如换脸）不一定适用，且推理成本高。
+
+\subsubsection{通用视觉表示方法}
+
+UnivFD\cite{ojha2023univfd} 发现，冻结的 CLIP 视觉编码器 + 线性分类器在跨生成器场景下优于专门训练的检测器。这类方法把“检测”转化为“真实图像与生成图像在通用语义空间中的分布差异”，泛化性较好，但对压缩、低分辨率等退化的鲁棒性仍需验证。
+
+\subsubsection{数据增广与自监督方法}
+
+为缓解“新伪造方法没有标注”的问题，SBI\cite{shiohara2022sbi} 用自混合（self-blending）合成大量伪训练样本，让模型学习“混合边界”这类通用线索；也有工作用自监督预训练、对比学习提升特征的可迁移性。本文的实验表明，仅靠随机退化增广不足以带来强压缩下的鲁棒性。
+
+\subsubsection{时序与多模态方法}
+
+视频检测可利用帧间一致性、眨眼频率、光流等时序线索；多模态方法进一步融合音频、文本、元数据。FakeAVCeleb、AV-Deepfake1M 等数据集推动了这一方向。本文聚焦图像级检测，时序与多模态仅作为展望。
+
+表~\ref{tab:methods} 对上述路线做了汇总。
+
+\begin{table}[H]
+\centering
+\caption{检测方法路线对比}
+\label{tab:methods}
+\small
+\begin{tabular}{p{2.0cm}p{4.0cm}p{4.3cm}p{3.4cm}}
+\toprule
+路线 & 代表工作 & 核心思想 & 主要局限 \\
+\midrule
+空域 & MesoNet, Xception, 多注意力, ICT & 直接学习纹理/身份不一致 & 易学数据集捷径，跨库掉点 \\
+频域 & F3-Net, SPSL, SRM & 伪造留下频域/噪声指纹 & 强压缩下高频信息被破坏 \\
+重构 & RECCE, DIRE, AEROBLADE & 用重建误差衡量“像不像真实图像” & 依赖大模型，推理贵，对换脸不一定适用 \\
+通用表示 & UnivFD & 冻结 CLIP + 线性分类器 & 对退化鲁棒性待验证 \\
+数据增广 & SBI & 自混合合成伪样本 & 依赖混合假设，新式换脸无混合 \\
+时序/多模态 & 各类视频/音视频方法 & 利用帧间与跨模态一致性 & 数据与算力门槛高 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{数据集与评测基准}
+
+\begin{table}[H]
+\centering
+\caption{常用深度伪造数据集}
+\label{tab:datasets}
+\small
+\begin{tabular}{p{2.6cm}p{1.2cm}p{5.6cm}p{4.4cm}}
+\toprule
+数据集 & 年份 & 规模与特点 & 常见用途 \\
+\midrule
+FaceForensics++\cite{rossler2019ffpp} & 2019 & 1,000 真 + 6,000 假视频，4 种方法，c23/c40/raw 三档压缩 & 训练集、同库评测 \\
+Celeb-DF\cite{li2020celebd} & 2020 & 590 真 + 5,639 假视频，换脸质量更高 & 跨库测试 \\
+DFDC\cite{dolhansky2020dfdc} & 2020 & 10 万+ 视频，真实场景、多人脸 & 大规模竞赛 \\
+ForgeryNet\cite{he2021forgerynet} & 2021 & 15 种方法、百万级图像/视频 & 大规模训练 \\
+GenImage\cite{zhu2023genimage} & 2023 & 8 种生成器、百万级图像 & AIGC 图像检测 \\
+DF40\cite{yan2024df40} & 2024 & 40 种方法（换脸/重演/合成/编辑） & 下一代评测基准 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+评测基准方面，DeepfakeBench\cite{yan2023deepfakebench} 统一了 15 种检测器、9 个数据集的实现与评测流程，缓解了“各论文各测各的”问题。DF40 则指出，仅用 FF++ 训练、在旧数据集上测试的“黄金协议”可能高估检测器的真实能力，因为 FF++ 的伪造方法已过时、且只覆盖部分伪造类型。
+
+\subsection{域泛化与开集识别}
+
+跨库性能下降的本质是域偏移：压缩方式、分辨率、人脸对齐、身份分布、生成方法都可能不同。常见对策包括：\textbf{域泛化}（退化增广、风格随机化、频域扰动、元学习）、\textbf{域适应}（用目标域无标签数据更新 BN 统计量、对抗对齐、伪标签自训练）、\textbf{开集识别}（判断“是否属于未见过的伪造类型”，常用能量分数、原型距离、拒识阈值）。
+
+本文没有实现完整的开集识别，而是用“留出一种伪造方法”近似零样本场景，并发现模型在该场景下接近随机（AUC 0.598）。这一结果与 DF40 的结论一致：在旧数据集上训练、只做闭集评测，会严重高估模型的泛化能力。
+
+\subsection{可解释性研究}
+
+深度伪造检测的可解释性主要有三条路径：\textbf{热图}（Grad-CAM\cite{selvaraju2017gradcam}、注意力可视化）、\textbf{频域可视化}（频谱异常、DCT 系数分布）、\textbf{定量 faithfulness}（deletion/insertion、RISE、Shapley 等）。现有工作大多停留在“放几张热图”，缺少定量验证；而热图好看不等于解释可信。本文实现了 deletion/insertion 的定量对比，并讨论了填充策略对结果的影响。
+
+\subsection{现有研究存在的问题}
+\label{sec:problems}
+
+综合文献与本文实验，当前研究存在以下问题：
+
+\begin{enumerate}
+  \item \textbf{数据集与真实场景脱节}。FF++ 的伪造方法停留在 2019 年，且只覆盖换脸与重演；在它上面刷出的高分，对扩散生成、商用工具、无混合的换脸方法未必成立（DF40 的核心论点）。
+  \item \textbf{捷径学习普遍存在}。模型容易利用压缩方式、人脸对齐、身份分布等与标签相关的伪线索。本文的跨库（AUC 0.716）、强压缩（F1 掉 11--23 pt）、未见方法（AUC 0.598）三组结果从不同角度印证了这一点。
+  \item \textbf{频域线索的有效性缺少验证}。频域方法假设“伪造留下稳定频域指纹”，但强压缩会破坏高频信息；本文的频谱分析显示，真假差异更多来自压缩块效应。
+  \item \textbf{评测协议不统一}。阈值选择、帧级/视频级、FPR 口径不同，导致论文之间难以比较；“跨库不重调阈值”这一基本要求常被忽略。
+  \item \textbf{开集与零样本泛化仍是难点}。留一方法、留一生成器的性能普遍大幅下降，现有域泛化方法的提升有限。
+  \item \textbf{可解释性缺乏定量标准}。热图多、数字少；解释是否忠实于模型决策，缺少统一评测。
+  \item \textbf{工程落地研究不足}。时延、吞吐、审计、合规、报告生成等系统问题在学术论文中很少讨论，而这正是实际部署的关键。
+  \item \textbf{数据与算力门槛}。大规模训练依赖多卡与海量数据，课程/中小团队难以复现，导致“论文指标”与“可复现结果”之间存在鸿沟。
+\end{enumerate}
+
+本文的定位正是针对第 2、3、4、6、7 条：用一套可控的实验揭示捷径学习、统一评测口径、做定量的可解释性验证，并落地一个可演示的系统。

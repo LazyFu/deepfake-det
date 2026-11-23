@@ -1,0 +1,78 @@
+\section{方法}
+
+\subsection{总体框架}
+
+输入 224$\times$224 人脸图，RGB 分支与频域分支分别提取特征，拼接后经全连接层输出二分类 logits，softmax 得到伪造概率。频域分支前接一个质量感知门控，按图像高频能量调整其权重。整体结构如图~\ref{fig:arch} 所示。
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  node distance=7mm and 9mm,
+  box/.style={draw, rounded corners=2pt, align=center, minimum height=8mm, font=\small, fill=gray!6},
+  op/.style={draw, circle, inner sep=1pt, font=\small, fill=white},
+  arr/.style={-{Stealth[length=2mm]}, thick}
+]
+\node[box] (in) {输入\\224$\times$224};
+\node[box, right=of in] (rgb) {ResNet18\\（预训练）};
+\node[box, right=of rgb] (f512) {512 维};
+\node[box, below=14mm of in] (fft) {FFT + SRM\\4 通道};
+\node[box, right=of fft] (cnn) {4 层 CNN\\+ GAP};
+\node[box, right=of cnn] (f256) {256 维};
+\node[box, below=10mm of f256] (gate) {质量门控\\$g=\sigma(\mathrm{MLP}(q))$};
+\node[op, right=of f512] (cat) {$\oplus$};
+\node[box, right=of cat] (fc) {FC 256\\$\to$ 2};
+\node[box, right=of fc] (out) {softmax\\$p(\text{fake})$};
+\draw[arr] (in) -- (rgb);
+\draw[arr] (rgb) -- (f512);
+\draw[arr] (in.south) -- (fft.north);
+\draw[arr] (fft) -- (cnn);
+\draw[arr] (cnn) -- (f256);
+\draw[arr, dashed] (gate.north) -- node[right,font=\scriptsize]{$\times$} (f256.south);
+\draw[arr] (f512) -- (cat);
+\draw[arr] (f256) -- (cat);
+\draw[arr] (cat) -- (fc);
+\draw[arr] (fc) -- (out);
+\end{tikzpicture}
+\caption{双流检测模型结构（虚线表示门控对频域特征的缩放）}
+\label{fig:arch}
+\end{figure}
+
+\subsection{RGB 分支}
+
+采用 ImageNet 预训练的 ResNet18，去掉最后的全连接层，输出 512 维特征。选择 ResNet18 的原因是：数据规模中等、8 GB 显存可训练、推理快（单图毫秒级），便于系统落地。迁移学习缓解了小数据下的过拟合。
+
+\subsection{频域分支}
+
+对灰度图做二维 FFT，取幅度谱并做 $\log(1+|\cdot|)$ 压缩动态范围，再逐图 z-score 标准化；同时用 SRM 高通滤波器提取噪声残差（3 个 $5\times5$ 固定核，不参与训练）。两者拼接为 4 通道输入，经 4 层卷积 + 全局平均池化得到 256 维特征。
+
+设计动机：伪造过程中的上采样、插值、生成器上采样层会在频域留下痕迹；SRM 残差则抑制图像内容、突出噪声层面的伪造线索。
+
+\subsection{质量感知门控}
+
+设图像高频能量为
+\begin{equation}
+  h_f = \frac{1}{HW}\sum_{i,j}\left|\,g_{ij} - \mathrm{avgpool}_{3\times3}(g)_{ij}\,\right|,
+\end{equation}
+其中 $g$ 为灰度图。门控值定义为
+\begin{equation}
+  q = \log(1 + 10 h_f), \qquad
+  \gamma = \sigma\!\left(W_2\,\mathrm{ReLU}(W_1 q + b_1) + b_2\right),
+\end{equation}
+频域特征被缩放为 $\tilde{f} = \gamma \cdot f_{\text{freq}}$。
+
+直觉是：图像清晰（高频高）时频域特征可信，门控接近 1；图像被压糊时门控接近 0，自动降低频域分支权重。第 5 章将说明该设计在本数据上失效的原因。
+
+\subsection{训练策略}
+
+\begin{itemize}
+  \item 损失：交叉熵 + 类别加权（真 1.5、假 0.75，缓解 1:2 不平衡）；
+  \item 优化器：AdamW，学习率 $10^{-4}$，weight decay $10^{-4}$，cosine 退火，15 epoch；
+  \item 混合精度训练，batch size 32；
+  \item 数据增强：随机水平翻转 + 50\% 概率随机退化；
+  \item 模型选择：按\textbf{验证集 AUC}（而非 F1），避免阈值依赖带来的选择噪声；
+  \item 早停：验证 AUC 连续 4 轮不涨则停止。
+\end{itemize}
+
+\subsection{阈值选择}
+
+训练结束后在验证集上计算两个阈值：满足 FPR$\le$1\% 的阈值（部署默认），以及使 F1 最大的阈值（报告对照），一并写入 checkpoint。跨库评测沿用源域阈值，不做任何调整。

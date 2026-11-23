@@ -1,0 +1,44 @@
+% 封面：南京信息工程大学课程设计报告
+% 作为 main.tex 的片段使用：\input{cover}
+% 也可用 cover_standalone.tex 单独编译预览
+% 所有字段都可在下面几行改：
+\def\reporttype{课程设计报告}
+\def\reporttitle{基于空域-频域联合分析的深度伪造检测与可解释系统}
+\def\studentname{付学瑞}
+\def\studentid{202383290286}
+\def\major{信息安全}
+\def\college{网络空间安全学院}
+\def\advisor{}
+\def\coversdate{二○二六年十二月}
+
+\begin{titlepage}
+\centering
+\vspace*{0.9cm}
+
+\includegraphics[width=10.4cm]{uni_name.png}\\[1.0cm]
+
+{\sffamily\bfseries\fontsize{24}{30}\selectfont \reporttype}\\[1.0cm]
+
+\includegraphics[width=3.3cm]{logo.png}\\[1.4cm]
+
+{\fontsize{14}{22}\selectfont
+\renewcommand{\arraystretch}{1.75}
+\begin{tabular}{r@{\hspace{8pt}}c}
+\makebox[3.0cm][r]{\sffamily 题\quad 目} &
+  \underline{\makebox[9.1cm][c]{\fontsize{11}{14}\selectfont \reporttitle}} \\[2pt]
+\makebox[3.0cm][r]{\sffamily 学生姓名：} &
+  \underline{\makebox[9.1cm][c]{\studentname}} \\[2pt]
+\makebox[3.0cm][r]{\sffamily 学\qquad 号：} &
+  \underline{\makebox[9.1cm][c]{\studentid}} \\[2pt]
+\makebox[3.0cm][r]{\sffamily 专\qquad 业：} &
+  \underline{\makebox[9.1cm][c]{\major}} \\[2pt]
+\makebox[3.0cm][r]{\sffamily 学\qquad 院：} &
+  \underline{\makebox[9.1cm][c]{\college}} \\[2pt]
+\makebox[3.0cm][r]{\sffamily 指导教师：} &
+  \underline{\makebox[9.1cm][c]{\advisor}} \\
+\end{tabular}}
+
+\vfill
+{\fontsize{15}{20}\selectfont \coversdate}
+\vspace{1.0cm}
+\end{titlepage}

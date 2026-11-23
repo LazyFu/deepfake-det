@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+*.egg-info
+
+# 虚拟环境
+.venv/
+
+# 数据与运行产物
+data/raw/
+data/frames/
+data/frames_extra/
+data/app/
+data/*.log
+data/*.csv
+runs/
+docs/experiments/batch.csv
+*.log
+
+# 图片与视频（数据集）
+*.jpg
+*.mp4
+
+# LaTeX 中间文件
+report/*.aux
+report/*.log
+report/*.out
+report/*.toc
+report/*.lof
+report/*.lot
+report/*.fls
+report/*.fdb_latexmk
+report/*.synctex.gz

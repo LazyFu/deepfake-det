@@ -1,0 +1,112 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage{luatexja}
+\usepackage{luatexja-fontspec}
+\usepackage{fontspec}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{listings}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[hidelinks]{hyperref}
+
+% ===== 在原始模板基础上补充 =====
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{makecell}
+\usepackage{array}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit,calc}
+\usepackage{enumitem}
+\usepackage{url}
+\usepackage{indentfirst}
+
+\lstset{
+    basicstyle=\ttfamily\footnotesize,
+    breaklines=true,
+    frame=single
+}
+
+\graphicspath{{images/}}
+\setmainjfont{Noto Serif CJK SC}[
+    BoldFont=Noto Serif CJK SC Bold,
+    ItalicFont=Noto Serif CJK SC Light,
+]
+\setmainfont{Times New Roman}
+\setsansjfont{Noto Sans CJK SC}[
+    BoldFont=Noto Sans CJK SC Bold,
+]
+
+\linespread{1.35}
+\setlength{\parindent}{2em}
+\captionsetup{font=small,labelfont=bf}
+\renewcommand{\contentsname}{目录}
+\emergencystretch=1em
+\setlist{nosep,leftmargin=2em}
+
+% 截图占位：把图片放到 images/ 下同名文件即可自动替换
+\newcommand{\screenshot}[2]{%
+  \IfFileExists{images/#1}%
+    {\includegraphics[width=0.92\linewidth]{#1}}%
+    {\fbox{\parbox[c][0.28\textheight][c]{0.86\linewidth}{\centering
+      \textbf{待补截图}\\[4pt] #2}}}%
+}
+
+\title{\textbf{基于空域-频域联合分析的\\深度伪造检测与可解释系统}}
+\author{课程设计小组}
+\date{\today}
+
+\begin{document}
+
+\input{cover}
+
+\section*{摘要}
+\addcontentsline{toc}{section}{摘要}
+
+\noindent
+深度伪造技术已从早期的自编码器换脸发展到扩散模型生成与商用工具一键换脸，伪造内容的逼真度与获取门槛同时恶化。现有检测方法在单一数据集上准确率很高，但在跨数据集、强压缩以及训练时未见过的生成方法上性能急剧下降。本文以“检测器到底学到了什么”为核心问题，构建了一套可复现的图像级检测与评测流程：以 FaceForensics++ C23 的 580 个身份、约 3.5 万张人脸帧训练 ResNet18 基线，在 Celeb-DF 上做跨库测试，并系统评测 JPEG 压缩、噪声、模糊、下采样、裁剪等退化。在此基础上实现了 RGB + FFT + SRM 的双流结构与质量感知门控，通过消融实验发现频域分支未带来稳定收益、门控退化为常数；平均频谱分析表明真假图的频域差异主要来自压缩块效应而非生成器指纹，留出一种伪造方法的开集实验（未见 FaceShifter，AUC 0.598）也印证了捷径学习。最终系统以 FastAPI 实现，提供伪造概率、Grad-CAM 热图、频谱图和带哈希链审计的 PDF 报告，单图推理约 11 ms。本文的主要价值不在于刷新指标，而在于用受控实验定位了“同库高指标、跨域失效”的成因，并给出了可复现的评测协议。
+
+\vspace{1em}
+\noindent\textbf{关键词：}深度伪造检测；频域分析；跨库泛化；捷径学习；可解释性
+
+\newpage
+\section*{Abstract}
+\addcontentsline{toc}{section}{Abstract}
+
+\noindent
+Deepfake technology has evolved from early autoencoder-based face swapping to diffusion-based
+synthesis and one-click commercial tools, making forged content both more realistic and easier to
+produce. Existing detectors achieve high accuracy on a single dataset but degrade sharply under
+cross-dataset shifts, heavy compression, and unseen generators. This report investigates what a
+detector actually learns. We build a reproducible image-level pipeline: a ResNet18 RGB baseline
+trained on 580 identities (about 35k face frames) from FaceForensics++ C23, evaluated on Celeb-DF
+for cross-dataset generalization and on six degradations. We further implement a dual-stream model
+with FFT magnitude and SRM residual branches plus a quality-aware gate. Ablations show no stable
+gain from the frequency branch, and the gate collapses to a constant (0.4272 $\pm$ 0.0008).
+Mean-spectrum analysis indicates that the real/fake difference is dominated by axis-aligned
+compression artifacts rather than generator fingerprints; an open-set experiment that holds out
+FaceShifter yields AUC 0.598 despite 0.933 in-domain AUC. The final system, built with FastAPI,
+returns a forgery score, a Grad-CAM heatmap, a spectrum image, and a PDF report with a
+hash-chained audit log; single-image inference takes about 11 ms on GPU and 37 ms on CPU.
+
+\vspace{1em}
+\noindent\textbf{Keywords:} deepfake detection; frequency analysis; cross-dataset generalization;
+shortcut learning; interpretability
+
+\newpage
+\tableofcontents
+\newpage
+
+\input{chapters/ch1}
+\input{chapters/ch2}
+\input{chapters/ch3}
+\input{chapters/ch4}
+\input{chapters/ch5}
+\input{chapters/ch6}
+\input{chapters/ch7}
+\input{chapters/ack}
+\input{refs}
+
+\end{document}

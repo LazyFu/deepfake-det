@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  body { font-family: "Noto Sans CJK SC", "DejaVu Sans", sans-serif; color:#111827; font-size: 11pt; }
+  h1 { font-size: 18pt; margin: 0 0 2mm; }
+  .sub { color:#6b7280; font-size: 9.5pt; margin-bottom: 8mm; }
+  .verdict { font-size: 16pt; font-weight: 700; margin: 6mm 0 2mm; }
+  .fake { color:#dc2626; } .real { color:#059669; }
+  table { width: 100%; border-collapse: collapse; margin: 4mm 0; }
+  th, td { border: 1px solid #e5e7eb; padding: 2.2mm 3mm; text-align: left; font-size: 9.5pt; }
+  th { background: #f3f4f6; width: 28%; font-weight: 600; }
+  .imgs { width: 100%; margin-top: 6mm; }
+  .imgs td { border: none; width: 33.33%; padding: 0 1.5mm; vertical-align: top; text-align: center; }
+  .imgs img { width: 100%; border: 1px solid #e5e7eb; border-radius: 2mm; }
+  .cap { color:#6b7280; font-size: 8.5pt; margin-top: 1.5mm; }
+  .note { color:#6b7280; font-size: 8.5pt; margin-top: 8mm; line-height: 1.6; }
+  .mono { font-family: "DejaVu Sans Mono", monospace; font-size: 8.5pt; word-break: break-all; }
+</style>
+</head>
+<body>
+  <h1>深度伪造检测报告</h1>
+  <div class="sub">报告编号 {{ id }} · 生成时间 {{ ts }} · 模型 {{ ckpt }}</div>
+
+  <div class="verdict {{ 'fake' if verdict == 'fake' else 'real' }}">
+    判定结果：{{ verdict_cn }}（伪造概率 {{ '%.2f%%'|format(score * 100) }}）
+  </div>
+
+  <table>
+    <tr><th>原始文件</th><td>{{ filename }}</td></tr>
+    <tr><th>文件 SHA-256</th><td class="mono">{{ sha256 }}</td></tr>
+    <tr><th>判定阈值</th><td>{{ '%.4f'|format(threshold) }}（验证集 F1 最优）</td></tr>
+    <tr><th>严格阈值（FPR≤1%）</th><td>{{ '%.4f'|format(threshold_strict) }}</td></tr>
+    <tr><th>人脸框</th><td>{{ face_box if face_box else '未检测到人脸，使用整图' }}</td></tr>
+    <tr><th>输入尺寸</th><td>{{ input_size[1] }} × {{ input_size[0] }}</td></tr>
+    <tr><th>推理耗时</th><td>{{ latency_ms }} ms</td></tr>
+    <tr><th>审计记录哈希</th><td class="mono">{{ audit_hash }}</td></tr>
+  </table>
+
+  <table class="imgs">
+    <tr>
+      <td><img src="{{ input_abs }}"><div class="cap">输入原图</div></td>
+      <td><img src="{{ heat_abs }}"><div class="cap">Grad-CAM 关注区域</div></td>
+      <td><img src="{{ spec_abs }}"><div class="cap">频谱图 log|FFT|</div></td>
+    </tr>
+  </table>
+
+  <div class="note">
+    说明：本报告由自动检测系统生成。伪造概率是模型输出，不等同于事实认定；
+    阈值来自验证集，跨数据集使用时存在分布偏移风险。
+    审计日志采用哈希链（每条记录包含前一条的 SHA-256），可通过 /v1/audit/verify 校验完整性。
+  </div>
+</body>
+</html>

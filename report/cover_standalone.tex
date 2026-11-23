@@ -1,0 +1,21 @@
+% 单独编译封面用：lualatex cover_standalone.tex
+\documentclass[12pt,a4paper]{article}
+\usepackage{luatexja}
+\usepackage{luatexja-fontspec}
+\usepackage{fontspec}
+\usepackage{graphicx}
+\usepackage[margin=2.5cm]{geometry}
+\graphicspath{{images/}}
+\setmainjfont{Noto Serif CJK SC}[
+    BoldFont=Noto Serif CJK SC Bold,
+    ItalicFont=Noto Serif CJK SC Light,
+]
+\setsansjfont{Noto Sans CJK SC}[
+    BoldFont=Noto Sans CJK SC Bold,
+]
+\setmainfont{Times New Roman}
+\pagestyle{empty}
+
+\begin{document}
+\input{cover}
+\end{document}

@@ -1,0 +1,9 @@
+{
+  "ckpt": "runs/baseline_rgb_v2/best.pt",
+  "n": 100,
+  "base_score": 0.64478600025177,
+  "deletion_cam": 1.0373020470142365,
+  "deletion_random": 1.2587071418762208,
+  "insertion_cam": 1.3242592334747314,
+  "insertion_random": 1.2539037585258486
+}

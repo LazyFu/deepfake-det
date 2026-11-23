@@ -1,0 +1,534 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage{luatexja}
+\usepackage{luatexja-fontspec}
+\usepackage{fontspec}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage[margin=2.4cm]{geometry}
+\usepackage[hidelinks]{hyperref}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{caption}
+
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    backgroundcolor=\color{gray!6},
+    columns=fullflexible,
+}
+
+\graphicspath{{images/}}
+\setmainjfont{Noto Serif CJK SC}[
+    BoldFont=Noto Serif CJK SC Bold,
+    ItalicFont=Noto Serif CJK SC Light,
+]
+\setmainfont{Times New Roman}
+
+\linespread{1.3}
+\setlength{\parindent}{2em}
+\captionsetup{font=small,labelfont=bf}
+\setlist{nosep,leftmargin=2em}
+
+\newcommand{\screenshot}[2]{%
+  \IfFileExists{images/#1}%
+    {\includegraphics[width=0.92\linewidth]{#1}}%
+    {\fbox{\parbox[c][0.26\textheight][c]{0.86\linewidth}{\centering
+      \textbf{待补截图}\\[4pt] #2}}}%
+}
+
+\title{\textbf{深度伪造检测系统\\使用手册}}
+\author{课程设计小组}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+本手册面向系统的使用者，介绍深度伪造检测系统的安装、启动、Web 与 API 使用、
+批量检测、配置项与常见问题。系统输入一张人脸图片，输出伪造概率、Grad-CAM 热图、
+频谱图，并可生成带哈希链审计的 PDF 报告。
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{系统概述}
+
+\subsection{功能}
+
+\begin{table}[H]
+\centering
+\caption{系统功能}
+\small
+\begin{tabular}{p{4.2cm}p{10cm}}
+\toprule
+功能 & 说明 \\
+\midrule
+图片检测 & 上传 JPG/PNG/BMP/WebP，返回伪造概率与判定 \\
+人脸裁剪 & 自动检测最大人脸并外扩裁剪；检测不到时使用整图 \\
+可解释 & Grad-CAM 热图 + log$|$FFT$|$ 频谱图 \\
+PDF 报告 & 单页 A4，含判定、元信息、三张图、审计哈希 \\
+审计日志 & JSONL 哈希链，可用接口校验完整性 \\
+API & REST 接口，支持脚本调用 \\
+批量检测 & 命令行扫描目录，输出 CSV \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{模型与指标}
+
+主模型为 ResNet18（ImageNet 预训练）RGB 基线，训练使用 FaceForensics++ C23 的 580 个身份。
+在 3,600 帧测试集上：帧级 AUC 0.933、TPR@FPR=1\% 0.596；视频级 AUC 0.950、TPR@1\% 0.700；
+跨库 Celeb-DF AUC 0.716。
+
+系统内置两个阈值：\textbf{严格模式}（验证集 FPR$\le$1\%，约 0.9974）与\textbf{演示模式}
+（验证集 F1 最优，约 0.0962）。阈值随模型权重保存在 checkpoint 中。
+
+\subsection{系统结构}
+
+\begin{itemize}
+  \item \texttt{app/detector.py}：模型加载、人脸裁剪、打分、Grad-CAM、频谱；
+  \item \texttt{app/main.py}：FastAPI 路由；
+  \item \texttt{app/report.py}：Jinja2 + WeasyPrint 生成 PDF；
+  \item \texttt{app/audit.py}：审计哈希链；
+  \item \texttt{app/templates/}：Web 页面与报告模板。
+\end{itemize}
+
+\section{运行环境}
+
+\subsection{硬件}
+
+\begin{itemize}
+  \item CPU：4 核以上；本机实测 \textbf{AMD Ryzen 9 7945HX with Radeon Graphics}（16 核 32 线程）；
+  \item 内存：8 GB 以上；
+  \item 磁盘：5 GB 以上（含模型权重与依赖）；
+  \item GPU：可选。NVIDIA 显卡 + CUDA 驱动可显著加速（本机实测 RTX 4060 Laptop）。
+\end{itemize}
+
+\subsection{软件}
+
+\begin{table}[H]
+\centering
+\caption{软件依赖}
+\small
+\begin{tabular}{ll}
+\toprule
+项 & 要求 \\
+\midrule
+操作系统 & Linux（Arch Linux 实测）\\
+Python & 3.12 及以上（实测 3.14）\\
+PyTorch & 2.15（GPU 版 cu134 或 CPU 版均可）\\
+Web & FastAPI + Uvicorn \\
+PDF & WeasyPrint（依赖 pango/cairo）\\
+字体 & Noto Serif/Sans CJK（PDF 中文）\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{安装}
+
+\subsection{创建虚拟环境}
+
+\begin{lstlisting}
+python3 -m venv .venv
+source .venv/bin/activate
+\end{lstlisting}
+
+\subsection{安装依赖}
+
+GPU（cu134 轮子）：
+
+\begin{lstlisting}
+uv pip install torch torchvision \
+  --index-url https://download.pytorch.org/whl/cu134
+\end{lstlisting}
+
+CPU：
+
+\begin{lstlisting}
+uv pip install torch torchvision \
+  --index-url https://download.pytorch.org/whl/cpu
+\end{lstlisting}
+
+Web 与 PDF 依赖：
+
+\begin{lstlisting}
+uv pip install fastapi "uvicorn[standard]" jinja2 python-multipart \
+  pillow weasyprint numpy opencv-python-headless scikit-learn pyyaml tqdm
+\end{lstlisting}
+
+\subsection{准备模型文件}
+
+需要两个文件：
+
+\begin{lstlisting}
+runs/rgb_700/best.pt                          # 主模型权重（约 44 MB）
+models/face_detection_yunet_2023mar.onnx      # 人脸检测模型（约 228 KB）
+\end{lstlisting}
+
+YuNet 缺失时程序会尝试自动下载；离线环境请提前放置。
+
+\subsection{自检}
+
+\begin{lstlisting}
+python -c "import torch; print(torch.__version__, torch.cuda.is\_available())"
+\end{lstlisting}
+
+输出第二项为 \texttt{True} 表示 GPU 可用。
+
+\section{启动与停止}
+
+\subsection{本机访问}
+
+\begin{lstlisting}
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+\end{lstlisting}
+
+浏览器打开 \url{http://127.0.0.1:8000}。
+
+\subsection{局域网访问}
+
+\begin{lstlisting}
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+\end{lstlisting}
+
+其他机器访问 \url{http://<本机IP>:8000}，需放行防火墙 8000 端口。
+
+\textbf{注意}：\texttt{--workers} 保持为 1。模型常驻显存，多 worker 会复制多份模型。
+
+\subsection{后台常驻}
+
+开发调试可直接前台运行；长期运行建议用 systemd（见 \texttt{deploy/README.md}）或：
+
+\begin{lstlisting}
+nohup python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 \
+  > data/app_server.log 2>&1 &
+\end{lstlisting}
+
+\subsection{停止}
+
+前台运行按 \texttt{Ctrl+C}；systemd 方式：
+
+\begin{lstlisting}
+sudo systemctl stop deepfake
+\end{lstlisting}
+
+\subsection{环境变量}
+
+\begin{table}[H]
+\centering
+\caption{环境变量}
+\small
+\begin{tabular}{lll}
+\toprule
+变量 & 默认值 & 说明 \\
+\midrule
+\texttt{APP\_CKPT} & \texttt{runs/rgb\_700/best.pt} & 模型权重路径 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Web 界面使用}
+
+\subsection{操作步骤}
+
+\begin{enumerate}
+  \item 打开首页，拖拽图片到虚线框，或点击“选择图片”；
+  \item 点击“开始检测”；
+  \item 查看伪造概率、判定结果、Grad-CAM 热图与频谱图；
+  \item 点击“下载 PDF 审计报告”保存报告。
+\end{enumerate}
+
+\begin{figure}[H]
+\centering
+\screenshot{fig_ui.png}{Web 界面：上传区、分数、判定、热图、频谱、PDF 下载}
+\caption{Web 界面}
+\label{fig:ui}
+\end{figure}
+
+\subsection{结果解读}
+
+\begin{table}[H]
+\centering
+\caption{结果字段}
+\small
+\begin{tabular}{p{3.2cm}p{10.5cm}}
+\toprule
+字段 & 含义 \\
+\midrule
+伪造概率 & 模型输出的 $p(\text{fake})$，0--1 \\
+判定 & 概率高于当前阈值判“伪造”，否则“真实” \\
+使用阈值 & 验证集 F1 最优的固定阈值（约 0.0962） \\
+严格阈值 & FPR$\le$1\% 的阈值（约 0.9974），仅用于对照 \\
+Grad-CAM & 模型关注区域，越红表示贡献越大 \\
+频谱图 & log$|$FFT$|$，伪彩色；亮点表示该频率成分强 \\
+审计哈希 & 本条记录在哈希链中的 SHA-256 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{阈值说明}
+
+系统使用模型权重中固定保存的阈值（验证集 F1 最优，约 0.0962），Web 界面不提供阈值调节。
+模型权重中还保存了满足 FPR$\le$1\% 的严格阈值（约 0.9974），仅用于结果对照。
+两个阈值均由验证集确定；跨数据集时分数分布可能偏移，阈值的适用性会下降。
+
+\subsection{PDF 报告}
+
+点击下载后生成单页 A4 报告，包含：报告编号、时间、模型、判定与概率、文件 SHA-256、
+两个阈值、人脸框、输入尺寸、推理耗时、审计哈希，以及原图、热图、频谱三张图。
+
+\begin{figure}[H]
+\centering
+\screenshot{fig_pdf.png}{PDF 报告第一页}
+\caption{PDF 报告}
+\label{fig:pdf}
+\end{figure}
+
+\section{API 使用}
+
+\subsection{接口列表}
+
+\begin{table}[H]
+\centering
+\caption{HTTP 接口}
+\small
+\begin{tabular}{lll}
+\toprule
+方法 & 路径 & 说明 \\
+\midrule
+GET & \texttt{/} & Web 页面 \\
+POST & \texttt{/v1/detect/image} & 图片检测 \\
+GET & \texttt{/v1/report/\{id\}.pdf} & 下载 PDF \\
+GET & \texttt{/v1/audit/verify} & 校验审计链 \\
+GET & \texttt{/healthz} & 健康检查 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{调用示例}
+
+检测一张图片：
+
+\begin{lstlisting}
+curl -X POST "http://127.0.0.1:8000/v1/detect/image" \
+     -F "file=@test.jpg"
+\end{lstlisting}
+
+返回（节选）：
+
+\begin{lstlisting}
+{
+  "id": "a582ee564c1c",
+  "score": 0.999999,
+  "verdict": "fake",
+  "threshold": 0.0913,
+  "threshold_strict": 0.9996,
+  "latency_ms": 10.9,
+  "artifacts": {
+    "heatmap": "/artifacts/a582ee564c1c/heatmap.png",
+    "spectrum": "/artifacts/a582ee564c1c/spectrum.png",
+    "pdf": "/v1/report/a582ee564c1c.pdf"
+  },
+  "audit_hash": "cfca33..."
+}
+\end{lstlisting}
+
+下载报告、校验审计：
+
+\begin{lstlisting}
+curl -o report.pdf http://127.0.0.1:8000/v1/report/a582ee564c1c.pdf
+curl http://127.0.0.1:8000/v1/audit/verify
+# {"ok": true, "n": 2}
+\end{lstlisting}
+
+\subsection{参数}
+
+\begin{table}[H]
+\centering
+\caption{\texttt{/v1/detect/image} 参数}
+\small
+\begin{tabular}{lll}
+\toprule
+参数 & 位置 & 说明 \\
+\midrule
+\texttt{file} & form-data & 图片文件，必填 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{返回字段}
+
+\begin{table}[H]
+\centering
+\caption{返回字段}
+\small
+\begin{tabular}{p{3.4cm}p{10.4cm}}
+\toprule
+字段 & 含义 \\
+\midrule
+\texttt{id} & 本次检测编号 \\
+\texttt{score} & 伪造概率 \\
+\texttt{verdict} & \texttt{fake} / \texttt{real} \\
+\texttt{threshold} & 本次使用的阈值 \\
+\texttt{threshold\_strict} & 严格阈值（FPR$\le$1\%） \\
+\texttt{face\_box} & 人脸框 $[x,y,w,h]$，未检测到为 null \\
+\texttt{latency\_ms} & 本次推理耗时 \\
+\texttt{artifacts} & 热图、频谱、PDF 的 URL \\
+\texttt{audit\_hash} & 审计记录哈希 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{错误码}
+
+\begin{table}[H]
+\centering
+\caption{常见错误}
+\small
+\begin{tabular}{lll}
+\toprule
+状态码 & 原因 & 处理 \\
+\midrule
+400 & 空文件 / 无法解码 & 检查图片格式 \\
+404 & 报告 ID 不存在 & 确认 ID \\
+422 & 缺少 file 字段 & 检查 form-data \\
+500 & 服务内部错误 & 查看日志 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{批量检测}
+
+对目录下所有图片打分，不启动服务：
+
+\begin{lstlisting}
+python scripts/07_batch_detect.py --input data/frames/Real --limit 100
+\end{lstlisting}
+
+输出 CSV（\texttt{docs/experiments/batch.csv}）：
+
+\begin{lstlisting}
+path,score,verdict,latency_ms
+data/frames/Real/00015.jpg,0.000019,real,36.8
+...
+\end{lstlisting}
+
+参数：\texttt{--input} 目录，\texttt{--limit} 限制数量，\texttt{--ckpt} 指定权重，
+\texttt{--mode f1|strict} 选择阈值。
+
+\section{数据与配置}
+
+\subsection{目录结构}
+
+\begin{lstlisting}
+data/app/
+├── uploads/    上传原图
+├── reports/    热图、频谱、PDF
+├── results/    每次检测的 JSON
+└── audit.jsonl 审计日志（哈希链）
+\end{lstlisting}
+
+\subsection{审计日志}
+
+每行一条 JSON，含 \texttt{id}、\texttt{sha256}、\texttt{score}、\texttt{verdict}、
+\texttt{prev\_hash}、\texttt{hash}。篡改任意一条，后续哈希校验失败。
+
+\subsection{清理}
+
+上传图、热图、PDF 可定期清理；审计日志建议保留。清空后哈希链从头开始。
+
+\subsection{更换模型}
+
+把新权重放到 \texttt{runs/} 下，启动时设置 \texttt{APP\_CKPT} 指向它即可；阈值随 checkpoint 读取。
+
+\section{常见问题}
+
+\begin{enumerate}
+  \item \textbf{首页 500}：Starlette 1.x 的 \texttt{TemplateResponse} 需要 \texttt{request} 作为第一个参数，本项目已修复；旧版本请升级代码。
+  \item \textbf{端口被占用}：换 \texttt{--port 8001}，或 \texttt{lsof -i:8000} 查占用进程。
+  \item \textbf{CUDA 不可用}：检查驱动与 \texttt{torch.cuda.is\_available()}；CPU 也能跑（约 37 ms/张）。
+  \item \textbf{PDF 中文乱码}：安装 Noto CJK 字体（\texttt{fonts-noto-cjk}）。
+  \item \textbf{检测不到人脸}：程序会用整图；正面、清晰的人脸效果最好。
+  \item \textbf{上传失败}：检查大小与格式；Nginx 需调大 \texttt{client\_max\_body\_size}。
+  \item \textbf{磁盘增长快}：定期清理 \texttt{data/app/} 下的旧文件。
+\end{enumerate}
+
+\section{安全与合规}
+
+\begin{itemize}
+  \item 建议本地/内网部署，避免上传敏感人脸到公网；
+  \item 审计日志包含文件哈希，注意隐私与留存期限；
+  \item 检测结果仅供参考，不构成事实认定；高利害场景应人工复核；
+  \item 使用需遵守《互联网信息服务深度合成管理规定》等法规。
+\end{itemize}
+
+\section{性能}
+
+\begin{table}[H]
+\centering
+\caption{单图耗时（含人脸检测与 Grad-CAM）}
+\small
+\begin{tabular}{lcc}
+\toprule
+设备 & 中位数 & p95 \\
+\midrule
+RTX 4060 Laptop & 10.9 ms & -- \\
+CPU（Ryzen 9 7945HX） & 36.8 ms & 42.0 ms \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+PDF 生成约 0.2--0.5 s，单页约 500 KB。
+
+\appendix
+\section{目录结构}
+
+\begin{lstlisting}
+deepfake-det/
+├── app/            服务代码
+├── src/            模型、数据、训练、评测
+├── configs/        训练配置
+├── runs/           模型权重与评测结果
+├── scripts/        数据处理、批量、鲁棒性、可解释性脚本
+├── deploy/         Dockerfile、systemd、nginx
+├── data/           数据集与运行时数据
+└── report/         LaTeX 报告与使用手册
+\end{lstlisting}
+
+\section{响应示例}
+
+完整返回：
+
+\begin{lstlisting}
+{
+  "id": "a582ee564c1c",
+  "ts": "2026-11-20T23:17:46",
+  "filename": "00015.jpg",
+  "sha256": "c02a7ec3...",
+  "score": 0.999999,
+  "threshold": 0.0913,
+  "threshold_strict": 0.9996,
+  "verdict": "fake",
+  "label": 1,
+  "face_box": [4, 0, 250, 250],
+  "latency_ms": 10.9,
+  "input_size": [256, 256],
+  "ckpt": "runs/rgb_700/best.pt",
+  "artifacts": {
+    "input": "/artifacts/a582ee564c1c/input.jpg",
+    "heatmap": "/artifacts/a582ee564c1c/heatmap.png",
+    "spectrum": "/artifacts/a582ee564c1c/spectrum.png",
+    "pdf": "/v1/report/a582ee564c1c.pdf"
+  },
+  "audit_hash": "cfca3363..."
+}
+\end{lstlisting}
+
+\end{document}

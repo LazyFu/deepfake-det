@@ -1,0 +1,82 @@
+\section{系统设计与实现}
+
+\subsection{架构}
+
+系统采用“推理核心 + Web 服务 + 报告生成 + 审计”四层结构：
+
+\begin{itemize}
+  \item \texttt{app/detector.py}：模型加载、YuNet 人脸裁剪、打分、Grad-CAM、频谱；
+  \item \texttt{app/main.py}：FastAPI 路由、文件落盘、结果 JSON；
+  \item \texttt{app/report.py} + \texttt{app/templates/report.html}：Jinja2 渲染 HTML，WeasyPrint 转 PDF；
+  \item \texttt{app/audit.py}：JSONL 哈希链审计日志。
+\end{itemize}
+
+\subsection{接口}
+
+\begin{table}[H]
+\centering
+\caption{系统接口}
+\label{tab:api}
+\small
+\begin{tabular}{lll}
+\toprule
+方法 & 路径 & 功能 \\
+\midrule
+GET & \texttt{/} & 单页上传界面 \\
+POST & \texttt{/v1/detect/image} & 返回分数、判定、热图/频谱 URL、审计哈希 \\
+GET & \texttt{/v1/report/\{id\}.pdf} & 单页 A4 PDF 报告 \\
+GET & \texttt{/v1/audit/verify} & 校验审计日志完整性 \\
+GET & \texttt{/healthz} & 健康检查 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{审计设计}
+
+每条日志记录包含 \texttt{prev\_hash} 与 \texttt{hash}，其中
+\[
+  \mathrm{hash} = \mathrm{SHA256}\big(\mathrm{prev\_hash} \,\|\, \mathrm{canonical(record)}\big).
+\]
+任意一条被篡改，后续哈希全部对不上，\texttt{/v1/audit/verify} 即可发现。报告内嵌输入文件的 SHA-256，便于追溯。
+
+\subsection{界面与报告}
+
+图~\ref{fig:ui} 与图~\ref{fig:pdf} 为系统界面与报告截图。
+
+\begin{figure}[H]
+\centering
+\screenshot{fig_ui.png}{Web 界面：拖拽上传、伪造概率、Grad-CAM 热图、频谱图、PDF 下载}
+\caption{系统 Web 界面}
+\label{fig:ui}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\screenshot{fig_pdf.png}{PDF 报告：判定结果、元信息、三张图、审计哈希}
+\caption{PDF 审计报告}
+\label{fig:pdf}
+\end{figure}
+
+\subsection{性能}
+
+\begin{table}[H]
+\centering
+\caption{系统性能实测}
+\label{tab:perf}
+\small
+\begin{tabular}{lc}
+\toprule
+项 & 结果 \\
+\midrule
+单图推理（热启动，含人脸检测） & 10.9 ms \\
+单图推理（冷启动） & 276.5 ms \\
+批量 10 张（模型加载后） & 17.3 ms/张 \\
+PDF 生成 & 单页约 517 KB \\
+审计链校验 & 通过 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{演示流程}
+
+上传图片 $\rightarrow$ 显示伪造概率、热图、频谱 $\rightarrow$ 下载 PDF。系统默认使用主模型 \texttt{runs/rgb\_700}，阈值固定为验证集 F1 最优值；FPR$\le$1\% 的严格阈值仅用于结果对照，不在界面暴露。

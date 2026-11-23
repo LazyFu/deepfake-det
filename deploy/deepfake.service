@@ -1,0 +1,27 @@
+# 系统级服务（需要 root）
+# 安装：
+#   sudo cp deploy/deepfake.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now deepfake
+# 查看日志：journalctl -u deepfake -f
+
+[Unit]
+Description=Deepfake Detection Demo (FastAPI)
+After=network.target
+
+[Service]
+Type=simple
+User=lazyfu
+Group=lazyfu
+WorkingDirectory=/home/lazyfu/work/deepfake-det
+Environment=APP_CKPT=runs/rgb_700/best.pt
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/lazyfu/work/deepfake-det/.venv/bin/python -m uvicorn app.main:app \
+    --host 0.0.0.0 --port 8000 --workers 1
+Restart=on-failure
+RestartSec=3
+# 如需限制资源：
+# MemoryMax=8G
+
+[Install]
+WantedBy=multi-user.target
